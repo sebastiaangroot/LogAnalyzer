@@ -185,7 +185,7 @@ def launch_log_monitor(filepath):
   worker_monitor(config)
 
 def main():
-  if len(sys.argv) != 2:
+  if len(sys.argv) != 2 or sys.argv[1] == '-h' or sys.argv[1] == '--help':
     usage()
   launch_log_monitor(sys.argv[1])
 
