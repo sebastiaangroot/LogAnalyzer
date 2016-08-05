@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import subprocess, re, configparser, sys, json, time, smtplib, socket, fcntl, os
+import subprocess, re, configparser, sys, json, time, smtplib, socket, fcntl, os, datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -116,6 +116,7 @@ def get_line(prog, logfile):
 def worker_monitor(config):
   # mail buffer
   last_sent = time.time()
+  last_heartbeat = 0.0
   mailbuffer = []
 
   # Extract config items
@@ -151,6 +152,9 @@ def worker_monitor(config):
           fatal('Error sending mail')
         mailbuffer = []
         last_sent = time.time()
+      if time.time() - last_heartbeat > 14400.0:
+        send_mail(datetime.datetime.now().strftime('%Y-%m-%d %H:%M') + ' heartbeat', 'heartbeat', config)
+        last_heartbeat = time.time()
   finally:
     if len(mailbuffer) > 0:
       print('sending %d stored events' % (len(mailbuffer),))
