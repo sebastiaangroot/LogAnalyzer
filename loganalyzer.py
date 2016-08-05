@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-import subprocess, re, configparser, sys, json, time, smtplib, socket
+import subprocess, re, configparser, sys, json, time, smtplib, socket, fcntl, os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
 
 PUBLIC_ADDR = "8.8.8.8"
 PUBLIC_PORT = 53
@@ -67,7 +68,7 @@ def matches_rules(line, rules):
       return name
   return None
 
-def monitor_logfile(filename):
+def monitor_logfile(filename, nonblocking = True):
   args = []
   args.append('tail')
   args.append('-f')
@@ -79,8 +80,11 @@ def monitor_logfile(filename):
       args,
       stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
+    if nonblocking:
+      flags = fcntl.fcntl(tail.stdout, fcntl.F_GETFL)
+      fcntl.fcntl(tail.stdout, fcntl.F_SETFL, flags | os.O_NONBLOCK)
   except:
-    fatal('Error on call: tail -f -n 0 %s' % (logfile,))
+    fatal('Error on call: tail -f -n 0 %s' % (filename,))
   return tail
 
 def send_mailbuffer(mailbuffer, config):
@@ -96,6 +100,19 @@ def send_mailbuffer(mailbuffer, config):
   subj += ' (%d)' % (len(mailbuffer),)
   send_mail(body, subj, config)
 
+def get_line(prog, logfile):
+  try:
+    if prog.poll() != None:
+      fatal('tail -f -n 0 %s unexpectedly terminated' % (logfile,))
+    line = prog.stdout.readline().decode('ascii', 'ignore')
+  except KeyboardInterrupt:
+    raise
+  except OSError:
+    return None
+  except:
+    fatal('Error reading from %s' % (logfile,))
+  return line
+
 def worker_monitor(config):
   # mail buffer
   last_sent = time.time()
@@ -106,40 +123,34 @@ def worker_monitor(config):
   outfile = config.get('Config', 'OutFile')
   rules = json.loads(config.get('Config', 'Rules'))
   # Open file monitoring
-  tail = monitor_logfile(logfile)
+  tail = monitor_logfile(logfile, nonblocking = True)
   # Start monitoring
   print('monitoring thread for %s started' % (logfile,))
   try:
     while True:
-      try:
-        if tail.poll() != None:
-          fatal('tail -f -n 0 %s unexpectedly terminated' % (logfile,))
-        line = tail.stdout.readline().decode('ascii', 'ignore')
-      except KeyboardInterrupt:
-        raise
-      except:
-        fatal('Error on reading from %s' % (logfile,))
-      matched_rule = matches_rules(line, rules)
-      if matched_rule:
-        try:
-          print('[LogAnalyzer] %s' % (matched_rule,))
-          print(line, end='')
-          with open(outfile, 'a') as f:
-            f.write(line)
-        except KeyboardInterrupt:
-          raise
-        except:
-          fatal('Error writing to %s' % (outfile,))
-        mailbuffer.append((line, matched_rule))
-        if time.time() - last_sent > 60.0:
+      line = get_line(tail, logfile)
+      if line:
+        matched_rule = matches_rules(line, rules)
+        if matched_rule:
           try:
-            send_mailbuffer(mailbuffer, config)
+            print('[LogAnalyzer] %s' % (matched_rule,))
+            print(line, end='')
+            with open(outfile, 'a') as f:
+              f.write(line)
           except KeyboardInterrupt:
             raise
           except:
-            fatal('Error sending mail')
-          mailbuffer = []
-          last_sent = time.time()
+            fatal('Error writing to %s' % (outfile,))
+          mailbuffer.append((line, matched_rule))
+      if len(mailbuffer) > 0 and time.time() - last_sent > 60.0:
+        try:
+          send_mailbuffer(mailbuffer, config)
+        except KeyboardInterrupt:
+          raise
+        except:
+          fatal('Error sending mail')
+        mailbuffer = []
+        last_sent = time.time()
   finally:
     if len(mailbuffer) > 0:
       print('sending %d stored events' % (len(mailbuffer),))
