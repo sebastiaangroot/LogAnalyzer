@@ -4,7 +4,7 @@ import subprocess, re, configparser, sys, json, time, smtplib, socket, fcntl, os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-
+SLEEP_INTERVAL = 0.5
 PUBLIC_ADDR = "8.8.8.8"
 PUBLIC_PORT = 53
 
@@ -129,6 +129,7 @@ def worker_monitor(config):
   print('monitoring thread for %s started' % (logfile,))
   try:
     while True:
+      time.sleep(SLEEP_INTERVAL)
       line = get_line(tail, logfile)
       if line:
         matched_rule = matches_rules(line, rules)
