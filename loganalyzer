@@ -1,0 +1,64 @@
+#!/bin/bash
+# /etc/init.d/loganalyzer
+### BEGIN INIT INFO
+# Provides:           loganalyzer
+# Required-Start:     $local_fs $remote_fs $network $syslog $named
+# Required-Stop:      $local_fs $remote_fs $network $syslog $named
+# Default-Start:      2 3 4 5
+# Default-Stop:       0 1 6
+# Short-Description:  LogAnalyzer log watcher
+### END INIT INFO
+
+. /lib/lsb/init-functions
+
+SELF=$(cd $(dirname $0); pwd -P)/$(basename $0)
+BIN_DIR="/usr/share/loganalyzer"
+CONF_DIR="/etc/loganalyzer"
+
+cd /
+
+case "$1" in
+  'start')
+  log_daemon_msg "Starting LogAnalyzer on auth_log" "loganalyzer"
+  $BIN_DIR/loganalyzer.py $CONF_DIR/auth_log.conf > /dev/null 2>&1 &
+  if pgrep -f loganalyzer.py > /dev/null 2>&1; then
+    log_progress_msg "running"
+    log_end_msg 0
+  else
+    log_progress_msg "unable to start"
+    log_end_msg 1
+  fi
+  ;;
+
+  'stop')
+  log_daemon_msg "Stopping LogAnalyzer" "loganalyzer"
+  PIDS=$(pgrep -f loganalyzer.py -d" ")
+  if [ $? -eq 0 ]; then kill $PIDS > /dev/null 2>&1; fi
+
+  if pgrep -f loganalyzer.py > /dev/null 2>&1; then
+    log_progress_msg "still alive"
+    log_end_msg 1
+  else
+    log_progress_msg "killed"
+    log_end_msg 0
+  fi
+  ;;
+
+  'restart')
+  set +e; $SELF stop; set -e
+  $SELF start
+  ;;
+
+  'status')
+  if pgrep -f loganalyzer.py > /dev/null 2>&1; then
+    log_action_msg "LogAnalyzer is active"
+  else
+    log_action_msg "LogAnalyzer is not active"
+  fi
+  ;;
+
+  *)
+  echo "Usage: $SELF start|stop|restart|status"
+  exit 1
+  ;;
+esac
